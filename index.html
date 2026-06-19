@@ -691,10 +691,12 @@
     </div>
 </footer>
 
-<script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-    import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, updateDoc, increment, arrayUnion } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+<!-- === FIREBASE COMPAT SDK (Works locally and online) === -->
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
 
+<script>
     const firebaseConfig = {
       apiKey: "AIzaSyClQne-1QTVJqOn2EhzmsshjqLzZNeli5E",
       authDomain: "awakened-egoist-wiki.firebaseapp.com",
@@ -705,8 +707,22 @@
       measurementId: "G-CVR39HT22E"
     };
 
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+
+    // --- INVISIBLE LOGIN ---
+    auth.signInAnonymously().catch((error) => {
+        console.error("Anonymous auth failed:", error);
+    });
+
+    auth.onAuthStateChanged((user) => {
+        if (user) {
+            console.log("Guest logged in successfully. Messages will save.");
+        } else {
+            console.log("User is not logged in.");
+        }
+    });
 
     // --- MODAL SCRIPT ---
     function openModal(imgSrc, tag, title, desc) {
@@ -717,7 +733,6 @@
         document.getElementById('modalOverlay').classList.add('active');
         document.body.style.overflow = 'hidden';
     }
-    window.openModal = openModal;
 
     function closeModal(event) {
         if (event.target.id === 'modalOverlay' || event.target.closest('.modal-close')) {
@@ -725,7 +740,6 @@
             document.body.style.overflow = 'auto';
         }
     }
-    window.closeModal = closeModal;
 
     document.addEventListener('keydown', function(event) {
         if (event.key === "Escape") {
@@ -760,16 +774,12 @@
         }
     }
 
-    // Call on load
     renderAuthState();
 
     // --- FIRESTORE SUGGESTIONS SCRIPT ---
-    const suggestionsRef = collection(db, 'suggestions');
     const list = document.getElementById('suggestionList');
-
-    const q = query(suggestionsRef, orderBy("createdAt", "desc"));
     
-    onSnapshot(q, (snapshot) => {
+    db.collection('suggestions').orderBy('createdAt', 'desc').onSnapshot((snapshot) => {
         list.innerHTML = '';
         if (snapshot.empty) {
             list.innerHTML = '<p style="color: var(--text-dim); text-align: center; padding: 20px;">No suggestions yet. Be the first Egoist to leave your mark!</p>';
@@ -827,15 +837,16 @@
             `;
             
             card.querySelector('.action-btn').addEventListener('click', async () => {
-                const docRef = doc(db, 'suggestions', id);
-                await updateDoc(docRef, { likes: increment(1) });
+                await db.collection('suggestions').doc(id).update({
+                    likes: firebase.firestore.FieldValue.increment(1)
+                });
             });
 
             list.appendChild(card);
         });
     });
 
-    window.submitSuggestion = async function() {
+    async function submitSuggestion() {
         let username = getCurrentUser();
         const input = document.getElementById('suggestionInput');
         const text = input.value.trim();
@@ -847,7 +858,6 @@
                 alert("Please enter a username. It will be locked to this browser once you submit.");
                 return;
             }
-            // Lock the username to local storage
             localStorage.setItem('ae_username', username);
             renderAuthState();
         }
@@ -858,10 +868,10 @@
         }
 
         try {
-            await addDoc(suggestionsRef, {
+            await db.collection('suggestions').add({
                 text: text,
                 likes: 0,
-                createdAt: serverTimestamp(),
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
                 author: username,
                 replies: []
             });
@@ -872,7 +882,7 @@
         }
     }
 
-    window.toggleReplyBox = function(id) {
+    function toggleReplyBox(id) {
         const box = document.getElementById(`reply-box-${id}`);
         if (box.style.display === 'none') {
             box.style.display = 'flex';
@@ -881,7 +891,7 @@
         }
     }
 
-    window.submitReply = async function(id) {
+    async function submitReply(id) {
         const username = getCurrentUser();
         const replyInput = document.getElementById(`reply-input-${id}`);
         const text = replyInput.value.trim();
@@ -895,9 +905,8 @@
         if (!text) return;
 
         try {
-            const docRef = doc(db, 'suggestions', id);
-            await updateDoc(docRef, {
-                replies: arrayUnion({
+            await db.collection('suggestions').doc(id).update({
+                replies: firebase.firestore.FieldValue.arrayUnion({
                     author: username,
                     text: text,
                     createdAt: Date.now()
